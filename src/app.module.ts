@@ -7,8 +7,12 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ProductsModule } from './products/products.module';
 import { OrdersModule } from './orders/orders.module';
 import { OrderItemsModule } from './order-items/order-items.module';
+import { GraphQLModule } from '@nestjs/graphql';
+import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
+import { join } from 'path';
 
 import configuration from './config/configuration';
+import { AppResolver } from './app.resolver';
 
 @Module({
   imports: [
@@ -21,17 +25,25 @@ import configuration from './config/configuration';
       type: 'postgres',
       url: process.env.DATABASE_URL,
       autoLoadEntities: true,
+      logging: true,
       synchronize: true, // for dev only
       ssl: {
         rejectUnauthorized: false,
       },
     }),
+    GraphQLModule.forRoot<ApolloDriverConfig>({
+      driver: ApolloDriver,
+      autoSchemaFile: join(process.cwd(), 'src/schema.gql'),
+      playground: true,
+      sortSchema: true,
+      autoTransformHttpErrors: true,
+    }),
     UsersModule,
     ProductsModule,
     OrdersModule,
-    OrderItemsModule
+    OrderItemsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, AppResolver],
 })
-export class AppModule { }
+export class AppModule {}

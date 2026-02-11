@@ -1,0 +1,55 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+"""
+A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
+"""
+scalar DateTime
+
+type OrderItemType {
+  id: ID!
+  price: Float!
+  product: ProductType!
+  quantity: Int!
+}
+
+"""The status of an order"""
+enum OrderStatus {
+  CANCELLED
+  COMPLETED
+  PENDING
+  SHIPPED
+}
+
+type OrderType {
+  createdAt: DateTime!
+  id: ID!
+  items: [OrderItemType!]!
+  status: OrderStatus!
+  total: Float!
+}
+
+input OrdersFilterInput {
+  dateFrom: DateTime
+  dateTo: DateTime
+  status: OrderStatus
+}
+
+input OrdersPaginationInput {
+  limit: Int = 10
+  offset: Int = 0
+}
+
+type ProductType {
+  description: String
+  id: ID!
+  name: String!
+  price: Float!
+  stock: Int!
+}
+
+type Query {
+  hello: String!
+  orders(filter: OrdersFilterInput, pagination: OrdersPaginationInput): [OrderType!]!
+}
