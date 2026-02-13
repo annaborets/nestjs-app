@@ -1,7 +1,7 @@
-import { NestFactory } from "@nestjs/core";
-import { DataSource } from "typeorm";
-import { seed } from "./seed";
-import { AppModule } from "../app.module";
+import { NestFactory } from '@nestjs/core';
+import { DataSource } from 'typeorm';
+import { seed } from './seed';
+import { AppModule } from '../app.module';
 
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(AppModule);

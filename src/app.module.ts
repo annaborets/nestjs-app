@@ -9,6 +9,9 @@ import { OrdersModule } from './orders/orders.module';
 import { OrderItemsModule } from './order-items/order-items.module';
 
 import configuration from './config/configuration';
+import { AuthModule } from './auth/auth.module';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 
 @Module({
   imports: [
@@ -17,6 +20,12 @@ import configuration from './config/configuration';
       load: [configuration],
       envFilePath: ['.env.local', '.env'],
     }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 10,
+      },
+    ]),
     TypeOrmModule.forRoot({
       type: 'postgres',
       url: process.env.DATABASE_URL,
@@ -26,12 +35,19 @@ import configuration from './config/configuration';
         rejectUnauthorized: false,
       },
     }),
+    AuthModule,
     UsersModule,
     ProductsModule,
     OrdersModule,
-    OrderItemsModule
+    OrderItemsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
-export class AppModule { }
+export class AppModule {}
