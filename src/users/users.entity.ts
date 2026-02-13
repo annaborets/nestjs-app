@@ -1,23 +1,48 @@
-import { Order } from "../orders/order.entity";
-import { Entity, PrimaryGeneratedColumn, Column, OneToMany, CreateDateColumn, UpdateDateColumn } from "typeorm";
+import { Order } from '../orders/order.entity';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  OneToMany,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from 'typeorm';
+
+import { Exclude } from 'class-transformer';
+import { Role } from '../auth/constants/roles.enum';
 
 @Entity('users')
 export class User {
-    @PrimaryGeneratedColumn()
-    id: number;
+  @PrimaryGeneratedColumn()
+  id: number;
 
-    @Column()
-    name: string;
+  @Column()
+  name: string;
 
-    @Column({ unique: true })
-    email: string;
+  @Column({ unique: true })
+  email: string;
 
-    @OneToMany(() => Order, order => order.user)
-    orders: Order[];
+  @Column()
+  @Exclude()
+  password: string;
 
-    @CreateDateColumn()
-    createdAt: Date;
+  @Column({
+    type: 'enum',
+    enum: Role,
+    default: Role.CUSTOMER,
+  })
+  role: Role;
 
-    @UpdateDateColumn()
-    updatedAt: Date;
+  @Column({ nullable: true })
+  @Exclude()
+  refreshToken?: string;
+
+  @OneToMany(() => Order, (order) => order.user)
+  orders: Order[];
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }
