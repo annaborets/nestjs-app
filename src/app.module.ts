@@ -12,6 +12,9 @@ import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { join } from 'path';
 
 import configuration from './config/configuration';
+import { AuthModule } from './auth/auth.module';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { AppResolver } from './app.resolver';
 
 @Module({
@@ -21,6 +24,12 @@ import { AppResolver } from './app.resolver';
       load: [configuration],
       envFilePath: ['.env.local', '.env'],
     }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 10,
+      },
+    ]),
     TypeOrmModule.forRoot({
       type: 'postgres',
       url: process.env.DATABASE_URL,
@@ -31,6 +40,7 @@ import { AppResolver } from './app.resolver';
         rejectUnauthorized: false,
       },
     }),
+    AuthModule,
     GraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,
       autoSchemaFile: join(process.cwd(), 'src/schema.gql'),
@@ -44,6 +54,12 @@ import { AppResolver } from './app.resolver';
     OrderItemsModule,
   ],
   controllers: [AppController],
-  providers: [AppService, AppResolver],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  , AppResolver],
 })
 export class AppModule {}
