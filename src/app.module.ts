@@ -16,6 +16,7 @@ import { AuthModule } from './auth/auth.module';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { AppResolver } from './app.resolver';
+import { FilesModule } from './files/files.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { AppResolver } from './app.resolver';
     ProductsModule,
     OrdersModule,
     OrderItemsModule,
+    FilesModule,
   ],
   controllers: [AppController],
   providers: [
