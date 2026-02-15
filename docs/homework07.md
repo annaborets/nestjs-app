@@ -27,18 +27,7 @@ Resolver only accepts GraphQL arguments and calls existing service methods. No l
 
 ### Problem: N+1 Queries
 
-Without DataLoader, fetching orders with products caused:
-
-```sql
-SELECT * FROM orders           -- 1 query
-SELECT * FROM order_items      -- 1 query
-SELECT * FROM products WHERE id = 1  -- individual queries
-SELECT * FROM products WHERE id = 2
-SELECT * FROM products WHERE id = 3
-...
-```
-
-Result: 2 + N queries (N = number of products)
+Without DataLoader, fetching orders with products caused multiple individual queries for each product.
 
 ### Solution: ProductLoader
 
@@ -63,27 +52,45 @@ Batches multiple `load()` calls into one database query.
 
 ---
 
-## 4. Before/After Proof
+## 4. Proof: N+1 Eliminated
 
-### Before DataLoader
+### Before DataLoader (N+1 Problem)
 
-```sql
-query: SELECT ... FROM products WHERE id = $1 -- [1]
-query: SELECT ... FROM products WHERE id = $1 -- [2]
-query: SELECT ... FROM products WHERE id = $1 -- [3]
-```
-
-Multiple individual queries.
-
-### After DataLoader
+Each product was fetched individually:
 
 ```sql
-query: SELECT ... FROM products WHERE id IN ($1, $2) -- [1,2]
+query: SELECT DISTINCT "distinctAlias"."Order_id" AS "ids_Order_id", "distinctAlias"."Order_createdAt" FROM (SELECT "Order"."id" AS "Order_id", "Order"."idempotencyKey" AS "Order_idempotencyKey", "Order"."total" AS "Order_total", "Order"."status" AS "Order_status", "Order"."userId" AS "Order_userId", "Order"."createdAt" AS "Order_createdAt", "Order"."updatedAt" AS "Order_updatedAt", "Order__Order_orderItems"."id" AS "Order__Order_orderItems_id", "Order__Order_orderItems"."quantity" AS "Order__Order_orderItems_quantity", "Order__Order_orderItems"."price" AS "Order__Order_orderItems_price", "Order__Order_orderItems"."orderId" AS "Order__Order_orderItems_orderId", "Order__Order_orderItems"."productId" AS "Order__Order_orderItems_productId", "Order__Order_user"."id" AS "Order__Order_user_id", "Order__Order_user"."name" AS "Order__Order_user_name", "Order__Order_user"."email" AS "Order__Order_user_email", "Order__Order_user"."createdAt" AS "Order__Order_user_createdAt", "Order__Order_user"."updatedAt" AS "Order__Order_user_updatedAt" FROM "orders" "Order" LEFT JOIN "order_items" "Order__Order_orderItems" ON "Order__Order_orderItems"."orderId"="Order"."id"  LEFT JOIN "users" "Order__Order_user" ON "Order__Order_user"."id"="Order"."userId") "distinctAlias" ORDER BY "distinctAlias"."Order_createdAt" DESC, "Order_id" ASC LIMIT 10 OFFSET 0
+
+query: SELECT "Order"."id" AS "Order_id", "Order"."idempotencyKey" AS "Order_idempotencyKey", "Order"."total" AS "Order_total", "Order"."status" AS "Order_status", "Order"."userId" AS "Order_userId", "Order"."createdAt" AS "Order_createdAt", "Order"."updatedAt" AS "Order_updatedAt", "Order__Order_orderItems"."id" AS "Order__Order_orderItems_id", "Order__Order_orderItems"."quantity" AS "Order__Order_orderItems_quantity", "Order__Order_orderItems"."price" AS "Order__Order_orderItems_price", "Order__Order_orderItems"."orderId" AS "Order__Order_orderItems_orderId", "Order__Order_orderItems"."productId" AS "Order__Order_orderItems_productId", "Order__Order_user"."id" AS "Order__Order_user_id", "Order__Order_user"."name" AS "Order__Order_user_name", "Order__Order_user"."email" AS "Order__Order_user_email", "Order__Order_user"."createdAt" AS "Order__Order_user_createdAt", "Order__Order_user"."updatedAt" AS "Order__Order_user_updatedAt" FROM "orders" "Order" LEFT JOIN "order_items" "Order__Order_orderItems" ON "Order__Order_orderItems"."orderId"="Order"."id"  LEFT JOIN "users" "Order__Order_user" ON "Order__Order_user"."id"="Order"."userId" WHERE "Order"."id" IN (7, 1, 35, 432, 63, 798, 317, 96, 6, 88) ORDER BY "Order"."createdAt" DESC
+
+query: SELECT "Product"."id" AS "Product_id", "Product"."name" AS "Product_name", "Product"."description" AS "Product_description", "Product"."price" AS "Product_price", "Product"."stock" AS "Product_stock", "Product"."createdAt" AS "Product_createdAt", "Product"."updatedAt" AS "Product_updatedAt" FROM "products" "Product" WHERE (("Product"."id" = $1)) LIMIT 1 -- PARAMETERS: [2]
+
+query: SELECT "Product"."id" AS "Product_id", "Product"."name" AS "Product_name", "Product"."description" AS "Product_description", "Product"."price" AS "Product_price", "Product"."stock" AS "Product_stock", "Product"."createdAt" AS "Product_createdAt", "Product"."updatedAt" AS "Product_updatedAt" FROM "products" "Product" WHERE (("Product"."id" = $1)) LIMIT 1 -- PARAMETERS: [1]
 ```
 
-Single batched query.
+**Problem:** 2 queries for orders/items + N individual queries for products (one per product).
 
-**Result:** 10 orders with 20 products: 22 queries → 3 queries (86% reduction)
+Total: **4+ queries** for just 2 products.
+
+---
+
+### After DataLoader (Batched Query)
+
+Products fetched in one batched query:
+
+```sql
+query: SELECT DISTINCT "distinctAlias"."Order_id" AS "ids_Order_id", "distinctAlias"."Order_createdAt" FROM (SELECT "Order"."id" AS "Order_id", "Order"."idempotencyKey" AS "Order_idempotencyKey", "Order"."total" AS "Order_total", "Order"."status" AS "Order_status", "Order"."userId" AS "Order_userId", "Order"."createdAt" AS "Order_createdAt", "Order"."updatedAt" AS "Order_updatedAt", "Order__Order_orderItems"."id" AS "Order__Order_orderItems_id", "Order__Order_orderItems"."quantity" AS "Order__Order_orderItems_quantity", "Order__Order_orderItems"."price" AS "Order__Order_orderItems_price", "Order__Order_orderItems"."orderId" AS "Order__Order_orderItems_orderId", "Order__Order_orderItems"."productId" AS "Order__Order_orderItems_productId", "Order__Order_user"."id" AS "Order__Order_user_id", "Order__Order_user"."name" AS "Order__Order_user_name", "Order__Order_user"."email" AS "Order__Order_user_email", "Order__Order_user"."createdAt" AS "Order__Order_user_createdAt", "Order__Order_user"."updatedAt" AS "Order__Order_user_updatedAt" FROM "orders" "Order" LEFT JOIN "order_items" "Order__Order_orderItems" ON "Order__Order_orderItems"."orderId"="Order"."id"  LEFT JOIN "users" "Order__Order_user" ON "Order__Order_user"."id"="Order"."userId") "distinctAlias" ORDER BY "distinctAlias"."Order_createdAt" DESC, "Order_id" ASC LIMIT 10 OFFSET 0
+
+query: SELECT "Order"."id" AS "Order_id", "Order"."idempotencyKey" AS "Order_idempotencyKey", "Order"."total" AS "Order_total", "Order"."status" AS "Order_status", "Order"."userId" AS "Order_userId", "Order"."createdAt" AS "Order_createdAt", "Order"."updatedAt" AS "Order_updatedAt", "Order__Order_orderItems"."id" AS "Order__Order_orderItems_id", "Order__Order_orderItems"."quantity" AS "Order__Order_orderItems_quantity", "Order__Order_orderItems"."price" AS "Order__Order_orderItems_price", "Order__Order_orderItems"."orderId" AS "Order__Order_orderItems_orderId", "Order__Order_orderItems"."productId" AS "Order__Order_orderItems_productId", "Order__Order_user"."id" AS "Order__Order_user_id", "Order__Order_user"."name" AS "Order__Order_user_name", "Order__Order_user"."email" AS "Order__Order_user_email", "Order__Order_user"."createdAt" AS "Order__Order_user_createdAt", "Order__Order_user"."updatedAt" AS "Order__Order_user_updatedAt" FROM "orders" "Order" LEFT JOIN "order_items" "Order__Order_orderItems" ON "Order__Order_orderItems"."orderId"="Order"."id"  LEFT JOIN "users" "Order__Order_user" ON "Order__Order_user"."id"="Order"."userId" WHERE "Order"."id" IN (7, 1, 35, 432, 63, 798, 317, 96, 6, 88) ORDER BY "Order"."createdAt" DESC
+
+query: SELECT "Product"."id" AS "Product_id", "Product"."name" AS "Product_name", "Product"."description" AS "Product_description", "Product"."price" AS "Product_price", "Product"."stock" AS "Product_stock", "Product"."createdAt" AS "Product_createdAt", "Product"."updatedAt" AS "Product_updatedAt" FROM "products" "Product" WHERE "Product"."id" IN ($1, $2) -- PARAMETERS: [1,2]
+```
+
+**Solution:** 2 queries for orders/items + 1 batched query for all products using `WHERE IN`.
+
+Total: **3 queries** regardless of product count.
+
+**Improvement:** For 2 products: 4 queries → 3 queries. For 20 products: 22 queries → 3 queries (86% reduction).
 
 ---
 

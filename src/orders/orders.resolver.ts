@@ -6,15 +6,19 @@ import { ProductType } from './models/product.model';
 import { OrdersFilterInput } from './inputs/orders-filter.input';
 import { OrdersPaginationInput } from './inputs/orders-pagination.input';
 import { Order } from './order.entity';
-import { OrderItem } from 'src/order-items/order-item.entity';
-import { Product } from 'src/products/product.entity';
+import { OrderItem } from '../order-items/order-item.entity';
+import { Product } from '../products/product.entity';
 import { ProductLoader } from './loaders/product.loader';
 import { NotFoundException } from '@nestjs/common';
+import { Public } from '../auth/decorators/public.decorator';
+import { SkipThrottle } from '@nestjs/throttler';
 
 @Resolver(() => OrderType)
+@SkipThrottle()
 export class OrdersResolver {
   constructor(private readonly ordersService: OrdersService) {}
 
+  @Public()
   @Query(() => [OrderType], { name: 'orders' })
   async getOrders(
     @Args('filter', { type: () => OrdersFilterInput, nullable: true })

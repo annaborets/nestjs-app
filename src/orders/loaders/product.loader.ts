@@ -1,7 +1,7 @@
 import { Injectable, Scope } from '@nestjs/common';
 import DataLoader from 'dataloader';
 import { ProductsService } from '../../products/products.service';
-import { Product } from 'src/products/product.entity';
+import { Product } from '../../products/product.entity';
 
 @Injectable({ scope: Scope.REQUEST })
 export class ProductLoader {
@@ -19,7 +19,7 @@ export class ProductLoader {
     },
   );
 
-  async load(productId: number): Promise<Product | null> {
+  load(productId: number): Promise<Product | null> {
     return this.loader.load(productId);
   }
 }

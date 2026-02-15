@@ -47,6 +47,7 @@ import { AppResolver } from './app.resolver';
       playground: true,
       sortSchema: true,
       autoTransformHttpErrors: true,
+      context: ({ req, res }) => ({ req, res }),
     }),
     UsersModule,
     ProductsModule,
@@ -60,6 +61,7 @@ import { AppResolver } from './app.resolver';
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
     },
-  , AppResolver],
+    AppResolver,
+  ],
 })
 export class AppModule {}

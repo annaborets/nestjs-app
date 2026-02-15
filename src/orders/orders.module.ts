@@ -5,7 +5,7 @@ import { OrderItem } from '../order-items/order-item.entity';
 import { Product } from '../products/product.entity';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
-import { ProductsModule } from 'src/products/products.module';
+import { ProductsModule } from '../products/products.module';
 import { OrdersResolver, OrderItemResolver } from './orders.resolver';
 import { ProductLoader } from './loaders/product.loader';
 

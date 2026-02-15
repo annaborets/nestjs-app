@@ -125,19 +125,33 @@ export class OrdersService {
   ) {
     const { limit = 10, offset = 0 } = pagination || {};
 
-    const where: { status?: string } = {};
+    const queryBuilder = this.orderRepository
+      .createQueryBuilder('order')
+      .leftJoinAndSelect('order.orderItems', 'orderItems')
+      .leftJoinAndSelect('order.user', 'user')
+      .orderBy('order.createdAt', 'DESC')
+      .take(limit)
+      .skip(offset);
 
     if (filter?.status) {
-      where.status = filter.status;
+      queryBuilder.andWhere('order.status = :status', {
+        status: filter.status,
+      });
     }
 
-    return this.orderRepository.find({
-      where,
-      relations: ['orderItems', 'user'],
-      order: { createdAt: 'DESC' },
-      take: limit,
-      skip: offset,
-    });
+    if (filter?.dateFrom) {
+      queryBuilder.andWhere('order.createdAt >= :dateFrom', {
+        dateFrom: filter.dateFrom,
+      });
+    }
+
+    if (filter?.dateTo) {
+      queryBuilder.andWhere('order.createdAt <= :dateTo', {
+        dateTo: filter.dateTo,
+      });
+    }
+
+    return queryBuilder.getMany();
   }
 
   async findOne(id: number) {
