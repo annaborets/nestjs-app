@@ -37,6 +37,9 @@ export class User {
   @Exclude()
   refreshToken?: string;
 
+  @Column({ nullable: true })
+  avatarFileId?: string;
+
   @OneToMany(() => Order, (order) => order.user)
   orders: Order[];
 
