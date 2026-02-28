@@ -1,0 +1,33 @@
+services:
+  api:
+    build:
+      context: .
+      target: dev
+    ports:
+      - '8080:3000'
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    environment:
+      DATABASE_URL: postgres://${DB_USER:-appuser}:${DB_PASSWORD:-apppassword}@postgres:5432/${DB_NAME:-appdb}
+      DATABASE_SSL: 'false'
+      JWT_SECRET: ${JWT_SECRET:-changeme}
+      PORT: '3000'
+      NODE_ENV: development
+      CHOKIDAR_USEPOLLING: 'true'
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minioadmin}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-lesson9-files-private}
+      S3_ENDPOINT: http://minio:9000
+    volumes:
+      - ./src:/usr/src/app/src
+      - /usr/src/app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+      - public
