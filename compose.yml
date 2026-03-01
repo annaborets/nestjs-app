@@ -20,6 +20,27 @@ services:
     cpus: 0.25
     stop_grace_period: 10s
 
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - internal
+      - public
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
   migrate:
     build:
       context: .
@@ -70,14 +91,17 @@ services:
       AWS_REGION: ${AWS_REGION:-us-east-1}
       AWS_S3_BUCKET: ${AWS_S3_BUCKET:-lesson9-files-private}
       S3_ENDPOINT: http://minio:9000
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
     depends_on:
       postgres:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy 
     networks:
       - internal
       - public
     init: true
-    mem_limit: 512m
+    mem_limit: 1024m
     cpus: 0.5
     stop_grace_period: 10s
 
@@ -129,6 +153,7 @@ services:
 volumes:
   pgdata:
   minio_data:
+  rabbitmq_data:
 
 networks:
   internal:

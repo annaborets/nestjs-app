@@ -8,10 +8,11 @@ import { OrdersService } from './orders.service';
 import { ProductsModule } from '../products/products.module';
 import { OrdersResolver, OrderItemResolver } from './orders.resolver';
 import { ProductLoader } from './loaders/product.loader';
+import { OutboxMessage } from 'src/auth/outbox/outbox-message.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Order, OrderItem, Product]),
+    TypeOrmModule.forFeature([Order, OrderItem, Product, OutboxMessage]),
     ProductsModule,
   ],
   controllers: [OrdersController],

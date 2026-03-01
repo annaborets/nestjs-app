@@ -16,6 +16,10 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { AppResolver } from './app.resolver';
 import { FilesModule } from './files/files.module';
+import { RabbitmqModule } from './rabbitmq/rabbitmq.module';
+import { WorkerModule } from './worker/worker.module';
+import { OutboxModule } from './auth/outbox/outbox.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -34,7 +38,7 @@ import { FilesModule } from './files/files.module';
       type: 'postgres',
       url: process.env.DATABASE_URL,
       autoLoadEntities: true,
-      logging: true,
+      logging: false,
       synchronize: false,
       migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
       migrationsRun: false,
@@ -56,6 +60,10 @@ import { FilesModule } from './files/files.module';
     OrdersModule,
     OrderItemsModule,
     FilesModule,
+    RabbitmqModule,
+    WorkerModule,
+    ScheduleModule.forRoot(),
+    OutboxModule,
   ],
   controllers: [AppController],
   providers: [
