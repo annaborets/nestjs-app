@@ -1,16 +1,19 @@
 # NestJS E-commerce Backend
 
-A backend for an e-commerce system with proper transaction handling, prevention of duplicate orders, and protection against overselling.
+A backend for an e-commerce system with async order processing, built on NestJS + RabbitMQ + PostgreSQL.
+
+Orders are accepted instantly and processed in background — stock validation, price calculation, and status updates all happen asynchronously through a message queue.
 
 ## Tech Stack
 
-- **NestJS + TypeScript** - backend framework
-- **PostgreSQL** - database (runs in Docker)
-- **TypeORM** - ORM + migrations
-- **GraphQL** - API layer
-- **JWT** - authentication
-- **MinIO** - S3-compatible file storage
-- **Docker** - everything runs in containers
+- **NestJS + TypeScript** — backend framework
+- **PostgreSQL** — database (runs in Docker)
+- **TypeORM** — ORM + migrations
+- **RabbitMQ** — message broker for async order processing
+- **GraphQL** — API layer
+- **JWT** — authentication
+- **MinIO** — S3-compatible file storage
+- **Docker** — everything runs in containers
 
 ## Getting Started
 
@@ -24,30 +27,26 @@ cd nestjs-app
 cp .env.example .env.local
 ```
 
-The defaults in `.env.example` work out of the box. No need to change anything for local development.
+The defaults in `.env.example` work out of the box.
 
-### Step 2: Start the database
+### Step 2: Start infrastructure
 
 ```bash
-docker compose up postgres -d
+docker compose up postgres rabbitmq -d
 ```
 
-Wait a few seconds until postgres is healthy.
+Wait until both are healthy (RabbitMQ needs up to 60s on first start):
+
+```bash
+docker compose ps
+```
+
+Both should show `(healthy)`.
 
 ### Step 3: Create tables
 
 ```bash
 docker compose run --rm migrate
-```
-
-This runs all migrations and exits. You'll see output like:
-```
-Running migrations...
-query: CREATE TABLE "users" (...)
-query: CREATE TABLE "orders" (...)
-query: CREATE TABLE "products" (...)
-...
-Migrations completed successfully
 ```
 
 ### Step 4: Add test data
@@ -56,236 +55,275 @@ Migrations completed successfully
 docker compose run --rm seed
 ```
 
-Creates an admin user and 5 sample products:
-```
-Admin user created
-Created 5 products
-Seeding completed!
-```
+Creates an admin user (`admin@example.com` / `Admin123!`) and 5 sample products.
 
 ### Step 5: Start the API
-
-**Production-like mode:**
-```bash
-docker compose up -d
-```
 
 **Development mode (hot reload):**
 ```bash
 docker compose -f compose.yml -f compose.dev.yml up --build
 ```
 
-In dev mode, edit any file in `src/` — the app recompiles automatically inside the container.
+**Production-like mode:**
+```bash
+docker compose up -d
+```
 
-### Step 6: Check it works
+### Step 6: Verify
 
 ```bash
-curl http://localhost:8080/graphql -X POST -H "Content-Type: application/json" -d "{\"query\":\"{__typename}\"}"
+curl http://localhost:8080/graphql -X POST \
+  -H "Content-Type: application/json" \
+  -d "{\"query\":\"{__typename}\"}"
 ```
 
-You should get:
-```json
-{"data":{"__typename":"Query"}}
-```
+Expected: `{"data":{"__typename":"Query"}}`
 
 ### Useful URLs
 
-| What | URL |
-|------|-----|
-| API | http://localhost:8080 |
-| GraphQL playground | http://localhost:8080/graphql |
-| MinIO console | http://localhost:9001 |
-| Adminer (DB viewer) | http://localhost:8081 (see below) |
+| What | URL | Credentials |
+|------|-----|-------------|
+| API | http://localhost:8080 | — |
+| GraphQL playground | http://localhost:8080/graphql | — |
+| RabbitMQ Management | http://localhost:15672 | guest / guest |
+| MinIO console | http://localhost:9001 | minioadmin / minioadmin |
+| Adminer (DB viewer) | http://localhost:8081 | appuser / apppassword |
 
-### View the database
-
+To start Adminer:
 ```bash
 docker compose --profile tools up adminer -d
 ```
 
-Go to http://localhost:8081, log in with: server `postgres`, user `appuser`, password `apppassword`, database `appdb`.
-
 ### Stop everything
 
 ```bash
-docker compose down
-```
-
-Add `-v` to also delete the database data:
-```bash
-docker compose down -v
+docker compose down        # keep data
+docker compose down -v     # delete all data
 ```
 
 ---
 
-## Docker Architecture
+## Architecture
 
-### Files added for Docker
+### Order Processing Flow
 
 ```
-├── Dockerfile              # Multi-stage: dev, build, prod, prod-distroless
-├── compose.yml             # Prod-like stack: api + postgres + migrate + seed + minio
-├── compose.dev.yml         # Dev override: hot reload with bind-mount
-├── .dockerignore           # Excludes node_modules, .env, .git from build context
-├── .env.example            # Template for environment variables
-└── src/database/
-    ├── data-source.ts      # Standalone TypeORM DataSource for migrations CLI
-    ├── run-migrations.ts   # Migration runner for Docker container
-    └── migrations/         # Generated migration files
+Client                    API                      DB                   RabbitMQ            Worker
+  │                        │                       │                      │                   │
+  │── POST /orders ──────> │                       │                      │                   │
+  │                        │── BEGIN TX ─────────>│                       │                   │
+  │                        │   save order (PENDING)│                      │                   │
+  │                        │   save order_items    │                      │                   │
+  │                        │   save outbox_message │                      │                   │
+  │                        │── COMMIT ───────────> │                      │                   │
+  │<── 201 Created ─────── │                       │                      │                   │
+  │    (status: pending)   │                       │                      │                   │
+  │                        │                       │                      │                   │
+  │                   [Outbox Relay - every 5s]    │                      │                   │
+  │                        │── SELECT pending ───> │                      │                   │
+  │                        │<── outbox messages ── │                      │                   │
+  │                        │── publish ──────────────────────────────────>│                   │
+  │                        │── UPDATE sent ──────> │                      │                   │
+  │                        │                       │                      │── deliver ──────> │
+  │                        │                       │                      │                   │── idempotency check
+  │                        │                       │                      │                   │── lock products
+  │                        │                       │                      │                   │── validate stock
+  │                        │                       │                      │                   │── deduct stock
+  │                        │                       │                      │                   │── calculate total
+  │                        │                       │                      │                   │── order → PROCESSED
+  │                        │                       │                      │<── ack ────────── │
 ```
 
-### Dockerfile targets
+The API responds in milliseconds. Heavy processing (stock checks, price calculations, external service calls) happens asynchronously in the worker.
 
-| Target | Base Image | What's inside | Used by |
-|--------|-----------|---------------|---------|
-| `dev` | node:22-alpine | Full source + all deps | compose.dev.yml |
-| `build` | node:22-alpine | Compiles TS → JS | intermediate, not run |
-| `prod` | node:22-alpine | dist/ + prod deps only | migrate, seed |
-| `prod-distroless` | gcr.io/distroless/nodejs22-debian12 | dist/ + prod deps, no shell | api in compose.yml |
+### RabbitMQ Topology
 
-### How compose.yml is organized
+```
+                    ┌───────────────────────────────────────┐
+                    │         orders.exchange (direct)      │
+                    └───────┬────────────────────┬──────────┘
+                            │                    │
+                     routing key:          routing key:
+                      "process"              "dlq"
+                            │                    │
+                            ▼                    ▼
+                    ┌────────────────┐    ┌───────────────┐
+                    │ orders.process │    │  orders.dlq   │
+                    │  (durable)     │    │  (durable)    │
+                    └───────┬────────┘    └───────────────┘
+                            │
+                            ▼
+                       [ Worker ]
+                      prefetch = 1
+                      manual ack
+```
 
-- **postgres** — internal network only, no exposed ports, healthcheck, persistent volume
-- **api** — built from prod-distroless, maps 8080→3000, depends on healthy postgres
-- **migrate** — one-off job, runs migrations and exits (profile: tools)
-- **seed** — one-off job, seeds data and exits (profile: tools)
-- **minio + minio-init** — S3-compatible storage for file uploads
-- **adminer** — database UI (profile: tools)
+| Component | Type | Purpose |
+|-----------|------|---------|
+| `orders.exchange` | direct exchange | Routes messages by routing key |
+| `orders.process` | durable queue | Main work queue — worker picks up orders here |
+| `orders.dlq` | durable queue | Dead letters — messages that exhausted all retries |
 
-Networks: `internal` (all services) + `public` (only api and adminer — they need to be reachable from your browser).
+You can see all of this live in RabbitMQ Management UI at http://localhost:15672.
 
-### How dev mode works
+### Retry + Dead Letter Queue
 
-`compose.dev.yml` overrides the api service:
-- Builds from `dev` target instead of `prod-distroless`
-- Bind-mounts `./src` into the container — your local edits go straight in
-- Anonymous volume for `node_modules` — prevents the mount from overwriting installed packages
-- Polling enabled for file watching (needed on Windows + Docker)
+When the worker fails to process an order, it does not just drop the message. Instead:
+
+```
+attempt 0 → FAIL → republish with attempt=1, ack original
+attempt 1 → FAIL → republish with attempt=2, ack original
+attempt 2 → FAIL → publish to orders.dlq, mark order as FAILED, ack
+```
+
+Max retries: **3** (configurable in `rabbitmq.constants.ts`).
+
+This is the **republish + ack** approach — the worker always acks the original message and publishes a new one with an incremented attempt counter. No infinite loops, no stuck messages. Everything either succeeds or lands in the DLQ for inspection.
+
+### Idempotency
+
+RabbitMQ guarantees **at-least-once delivery**. If the worker crashes after committing to the DB but before sending an ack, RabbitMQ will redeliver the message. Without protection, the order would be processed twice.
+
+**Level 1 — HTTP (idempotencyKey)**
+
+Each order carries a unique `idempotencyKey`. Sending the same key twice returns the existing order instead of creating a duplicate.
+
+**Level 2 — Worker (processed_messages table)**
+
+Every message has a unique `messageId`. When the worker starts processing, it tries to INSERT into `processed_messages`. If the messageId already exists, the unique constraint throws and the worker skips processing.
+
+We use a raw `INSERT` query instead of TypeORM's `save()` because `save()` silently does an upsert and would never detect duplicates.
+
+### Outbox Pattern
+
+Saving to the database and publishing to RabbitMQ are two separate operations. If one succeeds and the other fails, the system becomes inconsistent.
+
+The outbox pattern keeps everything in the database:
+
+1. `createOrder()` saves the order **and** an outbox message in a **single DB transaction**
+2. A relay service polls the `outbox_messages` table every 5 seconds
+3. For each pending message, it publishes to RabbitMQ and marks the record as `sent`
+
+If RabbitMQ goes down, messages accumulate in the outbox and get published when it comes back.
+
+### Worker Internals
+
+The worker processes one message at a time (`prefetch=1`, `noAck=false`):
+
+1. Receive message from `orders.process`
+2. Parse `{ messageId, orderId, attempt }`
+3. Begin DB transaction
+4. Try INSERT into `processed_messages` — if duplicate, ack and skip
+5. Load order (must be in PENDING status)
+6. For each order item:
+   - Lock the product row (`SELECT ... FOR UPDATE`)
+   - Validate stock availability
+   - Deduct stock
+   - Set item price from current product price
+7. Calculate order total
+8. Update order: `status=PROCESSED`, set `total` and `processedAt`
+9. Commit transaction
+10. Ack message
+
+If anything fails between steps 3–9, the transaction rolls back and the retry mechanism kicks in.
 
 ---
 
-## Proofs
-
-### Image sizes
-
-Actual output from `docker image ls`:
+## Project Structure
 
 ```
-IMAGE                    SIZE
-nestjs-dev               197MB
-nestjs-prod              104MB
-nestjs-distroless        74.7MB
+src/
+├── rabbitmq/
+│   ├── rabbitmq.module.ts            # Global module
+│   ├── rabbitmq.service.ts           # Connection, topology setup, publish/consume/ack
+│   └── rabbitmq.constants.ts         # Exchange name, queue names, MAX_RETRIES
+├── worker/
+│   ├── worker.module.ts
+│   ├── order.worker.ts               # Consumes orders.process, does the heavy lifting
+│   └── processed-message.entity.ts   # Idempotency tracking
+├── outbox/
+│   ├── outbox.module.ts
+│   ├── outbox-message.entity.ts
+│   ├── outbox-status.enum.ts
+│   └── outbox-relay.service.ts       # Polls DB, publishes to RabbitMQ
+├── orders/
+│   ├── orders.module.ts
+│   ├── orders.controller.ts
+│   ├── orders.service.ts             # Creates order + outbox msg in one transaction
+│   ├── orders.resolver.ts            # GraphQL
+│   ├── order.entity.ts
+│   └── dto/
+│       ├── create-order.dto.ts
+│       └── order-status.enum.ts
+├── order-items/
+│   └── order-item.entity.ts
+├── products/
+│   └── ...
+├── auth/
+│   └── ...
+├── users/
+│   └── ...
+├── files/
+│   └── ...
+└── database/
+    ├── data-source.ts
+    ├── run-migrations.ts
+    └── migrations/
 ```
 
-Distroless is ~28% smaller than prod Alpine. It has no shell, no package manager, no OS tools — just the Node.js runtime.
+## Database Schema
 
-### Docker history (prod image layers)
+### orders
 
-```
-$ docker history nestjs-prod
-SIZE      CREATED BY
-0B        CMD ["node" "dist/main.js"]
-0B        EXPOSE [3000/tcp]
-0B        USER node
-1.37MB    COPY /usr/src/app/dist ./dist
-233MB     RUN /bin/sh -c npm ci --omit=dev
-528kB     COPY package.json package-lock.json* ./
-16.4kB    WORKDIR /usr/src/app
-```
+| Column | Type | Notes |
+|--------|------|-------|
+| id | serial | PK |
+| idempotencyKey | varchar | unique — prevents duplicate orders |
+| total | decimal(10,2) | 0 until worker calculates it |
+| status | varchar | `pending` → `processed` or `failed` |
+| processedAt | timestamp | null until worker processes it |
+| userId | int | FK → users |
+| createdAt | timestamp | auto |
+| updatedAt | timestamp | auto |
 
-The biggest layer is `npm ci --omit=dev` (233MB — production dependencies). The compiled app itself (`dist/`) is only 1.37MB.
+### order_items
 
-### Non-root proof
+| Column | Type | Notes |
+|--------|------|-------|
+| id | serial | PK |
+| orderId | int | FK → orders |
+| productId | int | FK → products |
+| quantity | int | — |
+| price | decimal(10,2) | 0 until worker sets it |
 
-**prod containers (Alpine):**
-```
-$ docker compose run --rm --entrypoint sh seed -c "whoami"
-node
-```
+### processed_messages
 
-File ownership inside container:
-```
-$ docker compose run --rm --entrypoint sh seed -c "ls -la /usr/src/app/"
-drwxr-xr-x    1 node     node          4096 Feb 28 13:06 .
-drwxr-xr-x    1 node     node          4096 Feb 28 13:06 dist
-drwxr-xr-x    1 node     node         12288 Feb 28 13:06 node_modules
-```
+| Column | Type | Notes |
+|--------|------|-------|
+| messageId | uuid | PK — unique constraint prevents double processing |
+| orderId | int | — |
+| handler | varchar | e.g. "OrderWorker" |
+| processedAt | timestamp | auto |
 
-Everything owned by `node:node`, not `root`.
+### outbox_messages
 
-**prod-distroless container (no shell, so checked from outside):**
-```
-$ docker top nestjs-app-api-1
-UID       PID     PPID    CMD
-65532     28346   28323   /nodejs/bin/node dist/main.js
-```
-
-UID 65532 = `nonroot` user in distroless. Not 0 (root).
-
-### Postgres not exposed
-
-```
-$ docker compose ps
-NAME                    IMAGE                PORTS
-nestjs-app-api-1        nestjs-app-api       0.0.0.0:8080->3000/tcp
-nestjs-app-postgres-1   postgres:17-alpine   5432/tcp
-```
-
-API has `0.0.0.0:8080` — accessible from your machine. Postgres has just `5432/tcp` — only reachable inside Docker's internal network.
-
-### Clean runtime
-
-No source code, no dev tools, no config files in production container:
-```
-$ docker compose run --rm --entrypoint sh seed -c "ls /usr/src/app/"
-dist
-node_modules
-package-lock.json
-package.json
-```
-
-### Migrations and seed are one-off
-
-Both containers run their job and exit. They don't stay running. Triggered manually with:
-```bash
-docker compose run --rm migrate
-docker compose run --rm seed
-```
+| Column | Type | Notes |
+|--------|------|-------|
+| id | serial | PK |
+| exchange | varchar | target exchange |
+| routingKey | varchar | e.g. "process" |
+| payload | jsonb | message content |
+| status | varchar | `pending` → `sent` |
+| createdAt | timestamp | auto |
+| sentAt | timestamp | null until published |
 
 ---
 
-## Bonus features
+## API
 
-- **Healthcheck for postgres** — Docker monitors if DB is accepting connections
-- **Healthcheck for api** (dev mode) — Docker monitors if API responds
-- **Resource limits** — api: 512MB RAM / 0.5 CPU, postgres: 256MB RAM / 0.25 CPU
-- **`init: true`** on api — proper signal handling and zombie process cleanup
-- **`stop_grace_period: 10s`** — graceful shutdown on `docker compose down`
-- **Adminer** under `tools` profile — database UI without cluttering the main stack
+### Create an order
 
----
-
-## Business Logic
-
-### How Order Creation Works
-
-When someone creates an order, three things can go wrong:
-- Network timeout → user clicks "buy" again → duplicate orders
-- Two people buy the last item at the same time → overselling
-- Something fails mid-process → partial order
-
-Solutions:
-
-**Transactions** — everything happens in one transaction. If anything fails, nothing gets saved.
-
-**Idempotency** — each order needs a unique `idempotencyKey`. Same key twice = same order back, not a duplicate.
-
-**Pessimistic locking** — when checking stock, we lock the product row in the database. No one else can buy it until we're done.
-
-### API Examples
-
-**Create an order:**
-```bash
+```
 POST http://localhost:8080/orders
 Content-Type: application/json
 
@@ -298,14 +336,88 @@ Content-Type: application/json
 }
 ```
 
-**Get products:**
-```
-GET http://localhost:8080/products
+Immediate response:
+```json
+{
+  "id": 1,
+  "status": "pending",
+  "total": "0.00",
+  "processedAt": null
+}
 ```
 
-### Error Codes
+After worker processes (~5–10s):
+```json
+{
+  "id": 1,
+  "status": "processed",
+  "total": "1999.98",
+  "processedAt": "2026-03-01T14:19:16.643Z"
+}
+```
 
-- `201` - Order created
-- `200` - Same idempotency key, returning existing order
-- `400` - Product doesn't exist
-- `409` - Not enough stock
+### Other endpoints
+
+```
+GET /orders          # list all orders
+GET /orders/:id      # single order with items and product details
+GET /products        # list all products
+```
+
+### Message format (RabbitMQ)
+
+```json
+{
+  "messageId": "a1b2c3d4-...",
+  "orderId": 1,
+  "createdAt": "2026-03-01T14:00:00.000Z",
+  "attempt": 0
+}
+```
+
+---
+
+## Docker Architecture
+
+### Dockerfile targets
+
+| Target | Base Image | Used by |
+|--------|-----------|---------|
+| `dev` | node:22-alpine | compose.dev.yml (hot reload) |
+| `build` | node:22-alpine | intermediate build stage |
+| `prod` | node:22-alpine | migrate, seed |
+| `prod-distroless` | gcr.io/distroless/nodejs22-debian12 | api in production |
+
+### Services
+
+| Service | Image | Ports | Notes |
+|---------|-------|-------|-------|
+| postgres | postgres:17-alpine | internal only | healthcheck, persistent volume |
+| rabbitmq | rabbitmq:4-management-alpine | 5672, 15672 | AMQP + Management UI |
+| api | prod-distroless | 8080→3000 | depends on postgres + rabbitmq |
+| migrate | prod | — | one-off, runs migrations |
+| seed | prod | — | one-off, seeds test data |
+| minio | minio/minio | 9001, 9002 | S3-compatible storage |
+| adminer | adminer | 8081 | DB viewer (tools profile) |
+
+### Dev mode
+
+`compose.dev.yml` overrides the api service:
+- Builds from `dev` target instead of `prod-distroless`
+- Bind-mounts `./src` — local edits trigger recompilation
+- Anonymous volume for `node_modules`
+- Polling enabled for file watching (Windows + Docker)
+
+### Image sizes
+
+```
+nestjs-dev          197MB
+nestjs-prod         104MB
+nestjs-distroless   74.7MB
+```
+
+### Security
+
+- All containers run as non-root (`node` or UID 65532)
+- PostgreSQL is not exposed to the host
+- Distroless production image has no shell, no package manager
