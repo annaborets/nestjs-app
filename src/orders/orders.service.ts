@@ -1,17 +1,18 @@
-import {
-  Injectable,
-  BadRequestException,
-  ConflictException,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
+import { randomUUID } from 'crypto';
 import { Order } from './order.entity';
 import { OrderItem } from '../order-items/order-item.entity';
-import { Product } from '../products/product.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { RABBITMQ_EXCHANGE } from '../rabbitmq/rabbitmq.constants';
+import { OrderStatus } from './models/order-status.enum';
+import { OutboxMessage } from 'src/auth/outbox/outbox-message.entity';
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     @InjectRepository(Order)
     private orderRepository: Repository<Order>,
@@ -25,7 +26,7 @@ export class OrdersService {
     });
 
     if (existingOrder) {
-      console.log(
+      this.logger.log(
         `Idempotency key ${dto.idempotencyKey} already exists, returning existing order`,
       );
       return existingOrder;
@@ -36,68 +37,45 @@ export class OrdersService {
     await queryRunner.startTransaction();
 
     try {
-      let totalPrice = 0;
-      const orderItemsToCreate: Array<{
-        product: Product;
-        quantity: number;
-        price: number;
-      }> = [];
-
-      for (const item of dto.items) {
-        const product = await queryRunner.manager.findOne(Product, {
-          where: { id: item.productId },
-          lock: { mode: 'pessimistic_write' },
-        });
-
-        if (!product) {
-          throw new BadRequestException(
-            `Product with id ${item.productId} not found`,
-          );
-        }
-
-        if (product.stock < item.quantity) {
-          throw new ConflictException(
-            `Not enough stock for product "${product.name}". Available: ${product.stock}, requested: ${item.quantity}`,
-          );
-        }
-
-        product.stock -= item.quantity;
-        await queryRunner.manager.save(Product, product);
-
-        const itemPrice = Number(product.price) * item.quantity;
-        totalPrice += itemPrice;
-
-        orderItemsToCreate.push({
-          product,
-          quantity: item.quantity,
-          price: Number(product.price),
-        });
-      }
-
       const order = queryRunner.manager.create(Order, {
         userId: dto.userId,
         idempotencyKey: dto.idempotencyKey,
-        total: totalPrice,
-        status: 'pending',
+        total: 0,
+        status: OrderStatus.PENDING,
       });
 
       const savedOrder = await queryRunner.manager.save(Order, order);
 
-      const orderItems = orderItemsToCreate.map((item) =>
+      const orderItems = dto.items.map((item) =>
         queryRunner.manager.create(OrderItem, {
           orderId: savedOrder.id,
-          productId: item.product.id,
+          productId: item.productId,
           quantity: item.quantity,
-          price: item.price,
+          price: 0,
         }),
       );
 
       await queryRunner.manager.save(OrderItem, orderItems);
 
+      const messageId = randomUUID();
+
+      const outboxMessage = queryRunner.manager.create(OutboxMessage, {
+        exchange: RABBITMQ_EXCHANGE,
+        routingKey: 'process',
+        payload: {
+          messageId,
+          orderId: savedOrder.id,
+          createdAt: new Date().toISOString(),
+          attempt: 0,
+        },
+      });
+
+      await queryRunner.manager.save(OutboxMessage, outboxMessage);
+
       await queryRunner.commitTransaction();
 
-      console.log(
-        `Order ${savedOrder.id} created successfully with idempotency key ${dto.idempotencyKey}`,
+      this.logger.log(
+        `Order ${savedOrder.id} created (PENDING), outbox message ${messageId} saved`,
       );
 
       const finalOrder = await this.orderRepository.findOne({
@@ -105,14 +83,9 @@ export class OrdersService {
         relations: ['orderItems', 'orderItems.product'],
       });
 
-      if (!finalOrder) {
-        throw new Error('Failed to retrieve created order');
-      }
-
-      return finalOrder;
+      return finalOrder!;
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      console.error('Order creation failed, transaction rolled back');
       throw error;
     } finally {
       await queryRunner.release();
