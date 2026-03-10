@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { OrderItem } from 'src/order-items/order-item.entity';
 import { OrderStatus } from 'src/orders/models/order-status.enum';
 import { Order } from 'src/orders/order.entity';
+import { PaymentsClientService } from 'src/payments-client/payments-client.service';
 import { Product } from 'src/products/product.entity';
 import { ORDERS_QUEUE, MAX_RETRIES } from 'src/rabbitmq/rabbitmq.constants';
 import { RabbitmqService } from 'src/rabbitmq/rabbitmq.service';
@@ -24,6 +25,7 @@ export class OrderWorker implements OnModuleInit {
     private dataSource: DataSource,
     @InjectRepository(Order)
     private orderRepository: Repository<Order>,
+    private paymentsClient: PaymentsClientService,
   ) {}
 
   async onModuleInit() {
@@ -145,6 +147,17 @@ export class OrderWorker implements OnModuleInit {
 
         totalPrice += Number(product.price) * item.quantity;
       }
+
+      const paymentResult = await this.paymentsClient.authorize({
+        orderId: String(order.id),
+        amount: Math.round(totalPrice * 100),
+        currency: 'USD',
+        idempotencyKey: `payment-${order.idempotencyKey}`,
+      });
+
+      this.logger.log(
+        `Payment authorized: paymentId=${paymentResult.paymentId}, status=${paymentResult.status}`,
+      );
 
       order.total = totalPrice;
       order.status = OrderStatus.PROCESSED;
