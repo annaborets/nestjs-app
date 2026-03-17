@@ -68,11 +68,14 @@ docker compose -f compose.yml -f compose.dev.yml up --build
 
 This starts both `api` (orders-service on port 8080) and `payments` (gRPC server on port 5001, internal).
 
-**Production-like mode:**
+**Production-like mode (clean start):**
 
 ```bash
-docker compose up -d
+docker compose down -v           # remove old containers and volumes
+docker compose up -d --build     # rebuild images and start fresh
 ```
+
+This builds both `api` (distroless image) and `payments` (Alpine image) from scratch, ensuring the proto contract and compiled code are packaged correctly.
 
 ### Step 6: Verify
 

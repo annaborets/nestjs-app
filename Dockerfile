@@ -58,6 +58,7 @@ WORKDIR /usr/src/app
 
 COPY --from=prod /usr/src/app/node_modules ./node_modules
 COPY --from=build /usr/src/app/dist ./dist
+COPY proto ./proto
 
 USER nonroot
 
