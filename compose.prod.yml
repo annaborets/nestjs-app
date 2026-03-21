@@ -29,7 +29,7 @@ services:
 
   migrate:
     image: ${IMAGE_TAG}
-    entrypoint: ['node', 'dist/database/run-migrations.js']
+    entrypoint: ['/nodejs/bin/node', 'dist/database/run-migrations.js']
     environment:
       DATABASE_URL: postgres://appuser:apppassword@postgres:5432/appdb_prod
       DATABASE_SSL: 'false'
