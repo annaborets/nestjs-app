@@ -1,0 +1,124 @@
+name: Build & Deploy to Stage
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+      image_full: ${{ steps.meta.outputs.image_full }}
+      commit_sha: ${{ github.sha }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set image metadata
+        id: meta
+        run: |
+          IMAGE_TAG="sha-$(echo ${{ github.sha }} | cut -c1-7)"
+          IMAGE_FULL="ghcr.io/${{ github.repository }}:${IMAGE_TAG}"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "image_full=${IMAGE_FULL}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: prod
+          push: true
+          tags: ${{ steps.meta.outputs.image_full }}
+
+      - name: Generate release manifest
+        run: |
+          cat <<EOF > release-manifest.json
+          {
+            "commit": "${{ github.sha }}",
+            "branch": "${{ github.ref_name }}",
+            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "services": {
+              "nestjs-app": {
+                "image": "${{ steps.meta.outputs.image_full }}"
+              }
+            }
+          }
+          EOF
+          cat release-manifest.json
+
+      - name: Upload release manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest
+          path: release-manifest.json
+
+  deploy-stage:
+    name: Deploy to Stage
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: stage
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy to stage
+        env:
+          IMAGE_TAG: ${{ needs.build.outputs.image_full }}
+        run: |
+          echo "============================================"
+          echo "Deploying to STAGE"
+          echo "  Commit:  ${{ needs.build.outputs.commit_sha }}"
+          echo "  Image:   ${IMAGE_TAG}"
+          echo "============================================"
+          docker compose -f docker-compose.stage.yml up -d
+
+      - name: Smoke test (health check)
+        run: |
+          echo "Waiting for app to start..."
+          sleep 10
+
+          # Try up to 5 times with 5-second intervals
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/ || true)
+            echo "Attempt ${i}: HTTP ${STATUS}"
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "201" ]; then
+              echo "Stage deployment healthy!"
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "Stage smoke test FAILED"
+          docker compose -f docker-compose.stage.yml logs
+          exit 1
