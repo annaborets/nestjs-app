@@ -101,7 +101,7 @@ jobs:
           echo "  Commit:  ${{ needs.build.outputs.commit_sha }}"
           echo "  Image:   ${IMAGE_TAG}"
           echo "============================================"
-          docker compose -f docker-compose.stage.yml up -d
+          docker compose -f compose.stage.yml up -d
 
       - name: Smoke test (health check)
         run: |
@@ -120,5 +120,5 @@ jobs:
           done
 
           echo "Stage smoke test FAILED"
-          docker compose -f docker-compose.stage.yml logs
+          docker compose -f compose.stage.yml logs
           exit 1
