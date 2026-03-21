@@ -47,17 +47,21 @@ jobs:
           echo "  Env:     production"
           echo "  Actor:   ${{ github.actor }}"
           echo "============================================"
-          docker compose -f compose.prod.yml up -d
+          docker compose -f compose.prod.yml up -d --wait
 
       - name: Smoke test (health check)
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
           echo "Waiting for app to start..."
-          sleep 10
+          sleep 15
 
-          for i in 1 2 3 4 5; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/ || true)
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/graphql -X POST \
+              -H "Content-Type: application/json" \
+              -d '{"query":"{__typename}"}' || true)
             echo "Attempt ${i}: HTTP ${STATUS}"
-            if [ "$STATUS" = "200" ] || [ "$STATUS" = "201" ]; then
+            if [ "$STATUS" = "200" ]; then
               echo "Production deployment healthy!"
               exit 0
             fi

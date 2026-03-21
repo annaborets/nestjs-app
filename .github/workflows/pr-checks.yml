@@ -43,4 +43,4 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build Docker image (validation only)
-        run: docker build --target prod -t nestjs-app:test .
+        run: docker build --target prod-distroless -t nestjs-app:test .
