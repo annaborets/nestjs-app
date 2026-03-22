@@ -60,11 +60,13 @@ Creates an admin user (`admin@example.com` / `Admin123!`) and 5 sample products.
 ### Step 5: Start the API
 
 **Development mode (hot reload):**
+
 ```bash
 docker compose -f compose.yml -f compose.dev.yml up --build
 ```
 
 **Production-like mode:**
+
 ```bash
 docker compose up -d
 ```
@@ -81,15 +83,16 @@ Expected: `{"data":{"__typename":"Query"}}`
 
 ### Useful URLs
 
-| What | URL | Credentials |
-|------|-----|-------------|
-| API | http://localhost:8080 | — |
-| GraphQL playground | http://localhost:8080/graphql | — |
-| RabbitMQ Management | http://localhost:15672 | guest / guest |
-| MinIO console | http://localhost:9001 | minioadmin / minioadmin |
-| Adminer (DB viewer) | http://localhost:8081 | appuser / apppassword |
+| What                | URL                           | Credentials             |
+| ------------------- | ----------------------------- | ----------------------- |
+| API                 | http://localhost:8080         | —                       |
+| GraphQL playground  | http://localhost:8080/graphql | —                       |
+| RabbitMQ Management | http://localhost:15672        | guest / guest           |
+| MinIO console       | http://localhost:9001         | minioadmin / minioadmin |
+| Adminer (DB viewer) | http://localhost:8081         | appuser / apppassword   |
 
 To start Adminer:
+
 ```bash
 docker compose --profile tools up adminer -d
 ```
@@ -158,11 +161,11 @@ The API responds in milliseconds. Heavy processing (stock checks, price calculat
                       manual ack
 ```
 
-| Component | Type | Purpose |
-|-----------|------|---------|
-| `orders.exchange` | direct exchange | Routes messages by routing key |
-| `orders.process` | durable queue | Main work queue — worker picks up orders here |
-| `orders.dlq` | durable queue | Dead letters — messages that exhausted all retries |
+| Component         | Type            | Purpose                                            |
+| ----------------- | --------------- | -------------------------------------------------- |
+| `orders.exchange` | direct exchange | Routes messages by routing key                     |
+| `orders.process`  | durable queue   | Main work queue — worker picks up orders here      |
+| `orders.dlq`      | durable queue   | Dead letters — messages that exhausted all retries |
 
 You can see all of this live in RabbitMQ Management UI at http://localhost:15672.
 
@@ -275,47 +278,47 @@ src/
 
 ### orders
 
-| Column | Type | Notes |
-|--------|------|-------|
-| id | serial | PK |
-| idempotencyKey | varchar | unique — prevents duplicate orders |
-| total | decimal(10,2) | 0 until worker calculates it |
-| status | varchar | `pending` → `processed` or `failed` |
-| processedAt | timestamp | null until worker processes it |
-| userId | int | FK → users |
-| createdAt | timestamp | auto |
-| updatedAt | timestamp | auto |
+| Column         | Type          | Notes                               |
+| -------------- | ------------- | ----------------------------------- |
+| id             | serial        | PK                                  |
+| idempotencyKey | varchar       | unique — prevents duplicate orders  |
+| total          | decimal(10,2) | 0 until worker calculates it        |
+| status         | varchar       | `pending` → `processed` or `failed` |
+| processedAt    | timestamp     | null until worker processes it      |
+| userId         | int           | FK → users                          |
+| createdAt      | timestamp     | auto                                |
+| updatedAt      | timestamp     | auto                                |
 
 ### order_items
 
-| Column | Type | Notes |
-|--------|------|-------|
-| id | serial | PK |
-| orderId | int | FK → orders |
-| productId | int | FK → products |
-| quantity | int | — |
-| price | decimal(10,2) | 0 until worker sets it |
+| Column    | Type          | Notes                  |
+| --------- | ------------- | ---------------------- |
+| id        | serial        | PK                     |
+| orderId   | int           | FK → orders            |
+| productId | int           | FK → products          |
+| quantity  | int           | —                      |
+| price     | decimal(10,2) | 0 until worker sets it |
 
 ### processed_messages
 
-| Column | Type | Notes |
-|--------|------|-------|
-| messageId | uuid | PK — unique constraint prevents double processing |
-| orderId | int | — |
-| handler | varchar | e.g. "OrderWorker" |
-| processedAt | timestamp | auto |
+| Column      | Type      | Notes                                             |
+| ----------- | --------- | ------------------------------------------------- |
+| messageId   | uuid      | PK — unique constraint prevents double processing |
+| orderId     | int       | —                                                 |
+| handler     | varchar   | e.g. "OrderWorker"                                |
+| processedAt | timestamp | auto                                              |
 
 ### outbox_messages
 
-| Column | Type | Notes |
-|--------|------|-------|
-| id | serial | PK |
-| exchange | varchar | target exchange |
-| routingKey | varchar | e.g. "process" |
-| payload | jsonb | message content |
-| status | varchar | `pending` → `sent` |
-| createdAt | timestamp | auto |
-| sentAt | timestamp | null until published |
+| Column     | Type      | Notes                |
+| ---------- | --------- | -------------------- |
+| id         | serial    | PK                   |
+| exchange   | varchar   | target exchange      |
+| routingKey | varchar   | e.g. "process"       |
+| payload    | jsonb     | message content      |
+| status     | varchar   | `pending` → `sent`   |
+| createdAt  | timestamp | auto                 |
+| sentAt     | timestamp | null until published |
 
 ---
 
@@ -337,6 +340,7 @@ Content-Type: application/json
 ```
 
 Immediate response:
+
 ```json
 {
   "id": 1,
@@ -347,6 +351,7 @@ Immediate response:
 ```
 
 After worker processes (~5–10s):
+
 ```json
 {
   "id": 1,
@@ -381,28 +386,29 @@ GET /products        # list all products
 
 ### Dockerfile targets
 
-| Target | Base Image | Used by |
-|--------|-----------|---------|
-| `dev` | node:22-alpine | compose.dev.yml (hot reload) |
-| `build` | node:22-alpine | intermediate build stage |
-| `prod` | node:22-alpine | migrate, seed |
-| `prod-distroless` | gcr.io/distroless/nodejs22-debian12 | api in production |
+| Target            | Base Image                          | Used by                      |
+| ----------------- | ----------------------------------- | ---------------------------- |
+| `dev`             | node:22-alpine                      | compose.dev.yml (hot reload) |
+| `build`           | node:22-alpine                      | intermediate build stage     |
+| `prod`            | node:22-alpine                      | migrate, seed                |
+| `prod-distroless` | gcr.io/distroless/nodejs22-debian12 | api in production            |
 
 ### Services
 
-| Service | Image | Ports | Notes |
-|---------|-------|-------|-------|
-| postgres | postgres:17-alpine | internal only | healthcheck, persistent volume |
-| rabbitmq | rabbitmq:4-management-alpine | 5672, 15672 | AMQP + Management UI |
-| api | prod-distroless | 8080→3000 | depends on postgres + rabbitmq |
-| migrate | prod | — | one-off, runs migrations |
-| seed | prod | — | one-off, seeds test data |
-| minio | minio/minio | 9001, 9002 | S3-compatible storage |
-| adminer | adminer | 8081 | DB viewer (tools profile) |
+| Service  | Image                        | Ports         | Notes                          |
+| -------- | ---------------------------- | ------------- | ------------------------------ |
+| postgres | postgres:17-alpine           | internal only | healthcheck, persistent volume |
+| rabbitmq | rabbitmq:4-management-alpine | 5672, 15672   | AMQP + Management UI           |
+| api      | prod-distroless              | 8080→3000     | depends on postgres + rabbitmq |
+| migrate  | prod                         | —             | one-off, runs migrations       |
+| seed     | prod                         | —             | one-off, seeds test data       |
+| minio    | minio/minio                  | 9001, 9002    | S3-compatible storage          |
+| adminer  | adminer                      | 8081          | DB viewer (tools profile)      |
 
 ### Dev mode
 
 `compose.dev.yml` overrides the api service:
+
 - Builds from `dev` target instead of `prod-distroless`
 - Bind-mounts `./src` — local edits trigger recompilation
 - Anonymous volume for `node_modules`
@@ -421,3 +427,91 @@ nestjs-distroless   74.7MB
 - All containers run as non-root (`node` or UID 65532)
 - PostgreSQL is not exposed to the host
 - Distroless production image has no shell, no package manager
+
+---
+
+## CI/CD Pipeline
+
+The project has a full CI/CD pipeline built with GitHub Actions. It covers the whole path from opening a pull request to deploying in production.
+
+### How it works
+
+```
+feature branch → PR → checks (lint, test, docker build)
+                        ↓ merge
+                      build Docker image → push to GHCR → deploy to stage → smoke test
+                                                                ↓ manual trigger
+                                                          deploy to production (same image, manual approval)
+```
+
+The main idea is that the Docker image is built once and then reused across environments. Stage and production run the exact same artifact — no rebuilds.
+
+### Branch strategy
+
+Simple branching model:
+
+- `feature/*` — for new work, PRs go to `develop` or `main`
+- `develop` — integration branch
+- `main` — production-ready code
+
+Both `develop` and `main` are protected — you cannot push directly, PRs must pass all checks first.
+
+### Workflow files
+
+There are three workflow files in `.github/workflows/`:
+
+**`pr-checks.yml`** — runs on every pull request to `develop` or `main`. It installs dependencies, runs ESLint, runs unit tests, and also builds the Docker image to make sure the Dockerfile is not broken. If any of these fail, the PR cannot be merged.
+
+**`build-and-stage.yml`** — runs when code is merged (pushed) to `develop` or `main`. It builds the `prod-distroless` Docker image, tags it with the commit SHA (like `sha-a1b2c3d`), pushes it to GitHub Container Registry, and then deploys it to the stage environment using Docker Compose. After deploy, it hits the `/graphql` endpoint to verify the app is alive.
+
+**`deploy-prod.yml`** — manually triggered from the Actions tab. You paste the image tag from the stage build, and it deploys to production. The `production` GitHub Environment has required reviewers, so someone has to approve before the deploy actually runs. It uses the same image that was already tested on stage.
+
+### Environments
+
+Two GitHub Environments are configured in the repo settings:
+
+- **stage** — automatic deploy after build. Uses `compose.stage.yml` which starts PostgreSQL, RabbitMQ, runs migrations, and launches the API on port 3001.
+- **production** — requires manual approval. Uses `compose.prod.yml` with the same setup but on port 3000. Has concurrency protection so two deploys cannot happen at the same time.
+
+### Docker image tagging
+
+Every image gets an immutable tag based on the commit SHA:
+
+```
+ghcr.io/annaborets/nestjs-app:sha-53ff828
+```
+
+We never use `latest`. This way you always know exactly which commit is running in each environment.
+
+### Release manifest
+
+The build job generates a `release-manifest.json` and saves it as a GitHub Actions artifact. It looks like this:
+
+```json
+{
+  "commit": "53ff828322d4b7c1b0425254826182abd5e810e6",
+  "branch": "main",
+  "built_at": "2026-03-21T17:30:00Z",
+  "services": {
+    "nestjs-app": {
+      "image": "ghcr.io/annaborets/nestjs-app:sha-53ff828"
+    }
+  }
+}
+```
+
+### Smoke tests
+
+Both stage and production deployments run a smoke test after the app starts. The test sends a simple GraphQL introspection query and expects HTTP 200:
+
+```bash
+curl http://localhost:3001/graphql -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{__typename}"}'
+```
+
+If the app does not respond after 10 attempts, the deploy is marked as failed and the container logs are printed.
+
+### What is not included
+
+This is a single-service project, so there is no multi-service pipeline with path filters or contract tests. MinIO and seed services are also not part of the CI compose files — they are not needed for the deploy verification.
