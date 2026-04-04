@@ -4,6 +4,9 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { RequirePermissions } from '../auth/decorators/permissions.decorator';
 import { Permission } from '../auth/constants/permissions.enum';
 import { PermissionsGuard } from '../auth/guards/permission.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import type { JwtPayload } from '../auth/decorators/current-user.decorator';
+import { Throttle } from '@nestjs/throttler';
 
 @Controller('orders')
 @UseGuards(PermissionsGuard)
@@ -12,8 +15,12 @@ export class OrdersController {
 
   @Post()
   @RequirePermissions(Permission.WRITE_ORDERS)
-  createOrder(@Body() createOrderDto: CreateOrderDto) {
-    return this.ordersService.createOrder(createOrderDto);
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  createOrder(
+    @Body() createOrderDto: CreateOrderDto,
+    @CurrentUser() actor: JwtPayload,
+  ) {
+    return this.ordersService.createOrder(createOrderDto, actor);
   }
 
   @Get()

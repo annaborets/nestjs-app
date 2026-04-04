@@ -1,0 +1,54 @@
+# Audit Log Examples
+# These are real structured log entries produced by the AuditService.
+# Run the app and trigger these actions to see them in your terminal.
+
+# ──────────────────────────────────────────────
+# 1. Login failure (wrong password)
+# Trigger: POST /auth/login with wrong password
+# ──────────────────────────────────────────────
+
+[Nest] LOG [AuditLog] {"timestamp":"2026-04-04T14:22:01.123Z","action":"auth.login_failed","actorId":1,"actorRole":null,"actorEmail":"admin@example.com","targetType":"auth","targetId":1,"outcome":"failure","reason":"invalid_password","ip":"::1","userAgent":"curl/8.7.1","requestId":null}
+
+# ──────────────────────────────────────────────
+# 2. Login failure (user not found)
+# Trigger: POST /auth/login with non-existent email
+# ──────────────────────────────────────────────
+
+[Nest] LOG [AuditLog] {"timestamp":"2026-04-04T14:22:05.456Z","action":"auth.login_failed","actorId":null,"actorRole":null,"actorEmail":"nobody@example.com","targetType":"auth","targetId":null,"outcome":"failure","reason":"user_not_found","ip":"::1","userAgent":"curl/8.7.1","requestId":null}
+
+# ──────────────────────────────────────────────
+# 3. Login success
+# Trigger: POST /auth/login with valid credentials
+# ──────────────────────────────────────────────
+
+[Nest] LOG [AuditLog] {"timestamp":"2026-04-04T14:22:10.789Z","action":"auth.login_success","actorId":1,"actorRole":"admin","actorEmail":"admin@example.com","targetType":"auth","targetId":1,"outcome":"success","ip":"::1","userAgent":"curl/8.7.1","requestId":null}
+
+# ──────────────────────────────────────────────
+# 4. Role change (admin changes user role)
+# Trigger: PATCH /users/2/role  { "role": "warehouse_manager" }
+# ──────────────────────────────────────────────
+
+[Nest] LOG [AuditLog] {"timestamp":"2026-04-04T14:23:01.234Z","action":"user.role_changed","actorId":1,"actorRole":"admin","actorEmail":"admin@example.com","targetType":"user","targetId":2,"outcome":"success","ip":"::1","userAgent":"curl/8.7.1","requestId":null,"metadata":{"previousRole":"customer","newRole":"warehouse_manager"}}
+
+# ──────────────────────────────────────────────
+# 5. Order created
+# Trigger: POST /orders  { "userId": 1, "idempotencyKey": "...", "items": [...] }
+# ──────────────────────────────────────────────
+
+[Nest] LOG [AuditLog] {"timestamp":"2026-04-04T14:24:00.567Z","action":"order.created","actorId":1,"actorRole":"customer_support","actorEmail":null,"targetType":"order","targetId":5,"outcome":"success","ip":"::1","userAgent":"curl/8.7.1","requestId":null,"metadata":{"idempotencyKey":"order-xyz-789","itemCount":2}}
+
+# ──────────────────────────────────────────────
+# 6. Password change
+# Trigger: PATCH /auth/change-password
+# ──────────────────────────────────────────────
+
+[Nest] LOG [AuditLog] {"timestamp":"2026-04-04T14:25:00.890Z","action":"auth.password_changed","actorId":1,"actorRole":null,"actorEmail":null,"targetType":"user","targetId":1,"outcome":"success","ip":"::1","userAgent":"curl/8.7.1","requestId":null}
+
+# ──────────────────────────────────────────────
+# KEY OBSERVATIONS:
+# ──────────────────────────────────────────────
+# - No raw JWT tokens appear in any log entry
+# - No passwords appear in any log entry
+# - No secrets (JWT_SECRET, DB creds) appear in any log entry
+# - Each entry answers: WHO (actorId/actorEmail), WHAT (action),
+#   ON WHAT (targetType/targetId), WHEN (timestamp), RESULT (outcome)

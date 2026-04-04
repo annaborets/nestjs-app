@@ -20,6 +20,7 @@ import { RabbitmqModule } from './rabbitmq/rabbitmq.module';
 import { WorkerModule } from './worker/worker.module';
 import { OutboxModule } from './auth/outbox/outbox.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { AuditModule } from './audit/audit.module';
 
 @Module({
   imports: [
@@ -51,7 +52,8 @@ import { ScheduleModule } from '@nestjs/schedule';
     GraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,
       autoSchemaFile: true,
-      playground: true,
+      playground: process.env.NODE_ENV !== 'production',
+      introspection: process.env.NODE_ENV !== 'production',
       autoTransformHttpErrors: true,
       context: ({ req, res }) => ({ req, res }),
     }),
@@ -64,6 +66,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     WorkerModule,
     ScheduleModule.forRoot(),
     OutboxModule,
+    AuditModule,
   ],
   controllers: [AppController],
   providers: [
