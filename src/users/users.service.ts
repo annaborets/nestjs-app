@@ -10,12 +10,15 @@ import { User } from './users.entity';
 import * as bcrypt from 'bcrypt';
 import { Role } from '../auth/constants/roles.enum';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { AuditService } from '../audit/audit.service';
+import type { JwtPayload } from '../auth/decorators/current-user.decorator';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private usersRepository: Repository<User>,
+    private auditService: AuditService,
   ) {}
 
   async findAll(): Promise<User[]> {
@@ -56,13 +59,34 @@ export class UsersService {
     await this.usersRepository.update(userId, { refreshToken: hashedToken });
   }
 
-  async updateRole(userId: number, role: Role): Promise<User> {
+  async updateRole(
+    userId: number,
+    role: Role,
+    actor?: JwtPayload,
+  ): Promise<User> {
     const user = await this.findOne(userId);
-    user.role = role;
+    const previousRole = user.role;
 
+    user.role = role;
     user.refreshToken = undefined;
 
-    return this.usersRepository.save(user);
+    const updatedUser = await this.usersRepository.save(user);
+
+    this.auditService.log({
+      action: 'user.role_changed',
+      actorId: actor?.userId ?? null,
+      actorRole: actor?.role,
+      actorEmail: actor?.email,
+      targetType: 'user',
+      targetId: userId,
+      outcome: 'success',
+      metadata: {
+        previousRole,
+        newRole: role,
+      },
+    });
+
+    return updatedUser;
   }
 
   async updateProfile(

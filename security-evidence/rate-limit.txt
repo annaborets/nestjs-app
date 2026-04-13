@@ -1,0 +1,39 @@
+# Rate Limiting Evidence
+# Run this after starting the app:
+#
+#   npm run start:dev
+#
+# Then send 6 rapid login requests to trigger the 5/60s limit:
+#
+#   for i in {1..6}; do curl -s -o /dev/null -w "Request $i: HTTP %{http_code}\n" -X POST http://localhost:3000/auth/login -H "Content-Type: application/json" -d '{"email":"test@test.com","password":"wrong"}'; done
+#
+# Expected output:
+
+Request 1: HTTP 401
+Request 2: HTTP 401
+Request 3: HTTP 401
+Request 4: HTTP 401
+Request 5: HTTP 401
+Request 6: HTTP 429     ← Rate limit triggered
+
+# The 429 response body looks like:
+# {
+#   "statusCode": 429,
+#   "message": "ThrottlerException: Too Many Requests"
+# }
+#
+# ──────────────────────────────────────────────
+# Rate Limiting Configuration Summary:
+# ──────────────────────────────────────────────
+#
+# Global policy:           10 requests / 60 seconds (all endpoints)
+# POST /auth/login:         5 requests / 60 seconds
+# POST /auth/register:      3 requests / 60 seconds
+# POST /auth/refresh:       5 requests / 60 seconds
+# PATCH /auth/change-password: 3 requests / 60 seconds
+# POST /orders:             5 requests / 60 seconds
+# PATCH /users/:id/role:    5 requests / 60 seconds
+#
+# ──────────────────────────────────────────────
+# IMPORTANT: Replace the above with YOUR actual curl output!
+# ──────────────────────────────────────────────

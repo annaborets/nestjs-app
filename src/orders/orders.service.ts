@@ -8,6 +8,8 @@ import { CreateOrderDto } from './dto/create-order.dto';
 import { RABBITMQ_EXCHANGE } from '../rabbitmq/rabbitmq.constants';
 import { OrderStatus } from './models/order-status.enum';
 import { OutboxMessage } from 'src/auth/outbox/outbox-message.entity';
+import { AuditService } from '../audit/audit.service';
+import type { JwtPayload } from '../auth/decorators/current-user.decorator';
 
 @Injectable()
 export class OrdersService {
@@ -17,9 +19,10 @@ export class OrdersService {
     @InjectRepository(Order)
     private orderRepository: Repository<Order>,
     private dataSource: DataSource,
+    private auditService: AuditService,
   ) {}
 
-  async createOrder(dto: CreateOrderDto): Promise<Order> {
+  async createOrder(dto: CreateOrderDto, actor?: JwtPayload): Promise<Order> {
     const existingOrder = await this.orderRepository.findOne({
       where: { idempotencyKey: dto.idempotencyKey },
       relations: ['orderItems', 'orderItems.product'],
@@ -78,6 +81,19 @@ export class OrdersService {
         `Order ${savedOrder.id} created (PENDING), outbox message ${messageId} saved`,
       );
 
+      this.auditService.log({
+        action: 'order.created',
+        actorId: actor?.userId ?? null,
+        actorRole: actor?.role,
+        targetType: 'order',
+        targetId: savedOrder.id,
+        outcome: 'success',
+        metadata: {
+          idempotencyKey: dto.idempotencyKey,
+          itemCount: dto.items.length,
+        },
+      });
+
       const finalOrder = await this.orderRepository.findOne({
         where: { id: savedOrder.id },
         relations: ['orderItems', 'orderItems.product'],
@@ -86,6 +102,20 @@ export class OrdersService {
       return finalOrder!;
     } catch (error) {
       await queryRunner.rollbackTransaction();
+
+      this.auditService.log({
+        action: 'order.creation_failed',
+        actorId: actor?.userId ?? null,
+        actorRole: actor?.role,
+        targetType: 'order',
+        targetId: null,
+        outcome: 'failure',
+        reason: error instanceof Error ? error.message : 'unknown_error',
+        metadata: {
+          idempotencyKey: dto.idempotencyKey,
+        },
+      });
+
       throw error;
     } finally {
       await queryRunner.release();
