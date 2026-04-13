@@ -7,6 +7,7 @@ import { PermissionsGuard } from '../auth/guards/permission.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import type { JwtPayload } from '../auth/decorators/current-user.decorator';
+import { Throttle } from '@nestjs/throttler';
 
 @Controller('users')
 @UseGuards(PermissionsGuard)
@@ -40,10 +41,12 @@ export class UsersController {
 
   @Patch(':id/role')
   @RequirePermissions(Permission.WRITE_USERS)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   updateRole(
     @Param('id') id: string,
     @Body() updateRoleDto: UpdateUserRoleDto,
+    @CurrentUser() actor: JwtPayload,
   ) {
-    return this.usersService.updateRole(+id, updateRoleDto.role);
+    return this.usersService.updateRole(+id, updateRoleDto.role, actor);
   }
 }

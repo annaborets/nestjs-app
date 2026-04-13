@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apppassword
+      POSTGRES_DB: appdb_prod
+    networks:
+      - internal
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U appuser -d appdb_prod']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    networks:
+      - internal
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  migrate:
+    image: ${IMAGE_TAG}
+    entrypoint: ['/nodejs/bin/node', 'dist/database/run-migrations.js']
+    environment:
+      DATABASE_URL: postgres://appuser:apppassword@postgres:5432/appdb_prod
+      DATABASE_SSL: 'false'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+
+  api:
+    image: ${IMAGE_TAG}
+    ports:
+      - '3000:3000'
+    environment:
+      DATABASE_URL: postgres://appuser:apppassword@postgres:5432/appdb_prod
+      DATABASE_SSL: 'false'
+      JWT_SECRET: ci-prod-secret
+      PORT: '3000'
+      NODE_ENV: production
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - internal
+      - public
+
+networks:
+  internal:
+    internal: true
+  public:
