@@ -1,15 +1,25 @@
-import { Controller, Get, Post, Param, Body, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  Body,
+  UseGuards,
+  UseFilters,
+} from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { RequirePermissions } from '../auth/decorators/permissions.decorator';
 import { Permission } from '../auth/constants/permissions.enum';
 import { PermissionsGuard } from '../auth/guards/permission.guard';
+import { GrpcExceptionFilter } from 'src/payments-client/grpc-exception.filter';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { JwtPayload } from '../auth/decorators/current-user.decorator';
 import { Throttle } from '@nestjs/throttler';
 
 @Controller('orders')
 @UseGuards(PermissionsGuard)
+@UseFilters(GrpcExceptionFilter)
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 

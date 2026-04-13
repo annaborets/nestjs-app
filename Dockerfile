@@ -41,6 +41,7 @@ COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev
 
 COPY --from=build /usr/src/app/dist ./dist
+COPY proto ./proto
 
 RUN chown -R node:node /usr/src/app
 
@@ -57,6 +58,7 @@ WORKDIR /usr/src/app
 
 COPY --from=prod /usr/src/app/node_modules ./node_modules
 COPY --from=build /usr/src/app/dist ./dist
+COPY proto ./proto
 
 USER nonroot
 

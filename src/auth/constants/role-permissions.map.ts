@@ -13,6 +13,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     Permission.READ_ALL_ORDERS,
     Permission.UPDATE_ORDER_STATUS,
     Permission.CANCEL_ORDERS,
+    Permission.WRITE_ORDERS,
   ],
 
   [Role.WAREHOUSE_MANAGER]: [

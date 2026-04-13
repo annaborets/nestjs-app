@@ -6,7 +6,13 @@ services:
     ports:
       - '8080:3000'
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -23,14 +29,21 @@ services:
       AWS_S3_BUCKET: ${AWS_S3_BUCKET:-lesson9-files-private}
       S3_ENDPOINT: http://minio:9000
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
+      PAYMENTS_GRPC_URL: payments:5001
+      PAYMENTS_GRPC_TIMEOUT_MS: '5000'
+      PAYMENTS_GRPC_RETRY_ATTEMPTS: '3'
+      PAYMENTS_GRPC_RETRY_DELAY_MS: '200'
     volumes:
       - ./src:/usr/src/app/src
+      - ./proto:/usr/src/app/proto
       - /usr/src/app/node_modules
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+      payments:
+        condition: service_started
     networks:
       - internal
       - public
